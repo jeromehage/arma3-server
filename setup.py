@@ -21,6 +21,7 @@ def run(cmd, dry = True, pipe = False):
             return
 
 def user_exists(usr):
+    return True
     try:
         pwd.getpwnam(usr)
         return True
@@ -28,8 +29,9 @@ def user_exists(usr):
         return False
 
 def package_is_installed(pkg):
+    return True
     res = run("dpkg-query -W -f='${Status}\\n' " + pkg, pipe = True)
-    return 'installed' in res    
+    return 'installed' in res
 
 ## CONFIG
 
@@ -53,7 +55,7 @@ user = 'arma'
 
 # multiple server configuration
 # uses /arma3 as a base and symlinks to it
-# use a short name without spaces like 'ww2ita'
+# use a short name without spaces like 'ww2italy'
 server = 'soggy'
 
 # dirs
@@ -74,11 +76,28 @@ keyspath = gamepath + '/keys'
 needdlc = len(dlc) > 0
 
 # read the list of mod IDs from the modfile
-raw = ''
-with open(modfile, 'r') as f:
-    raw = f.read()
-ids = [i.split('<')[0].split('"')[0].strip() for i in raw.split('?id=')[1:]]
-ids = list(set(ids))
+ids = {}
+mod_names = {}
+if os.path.exists(modfile):
+    with open(modfile, 'r') as f:
+        raw = f.read()
+    for r in raw.split('</tr>')[:-1]:
+
+        # get mod id from the workshop link
+        href = r.split('href="')[1].split('"')[0].strip()
+        if 'id=' not in href:
+            continue
+        # between id= and the next parameter
+        i = href.find('id=') + 3
+        j = href.find(',', i) + 1
+        if j == 0:
+            j = len(href)
+        mod_id = href[i: j]
+
+        # get mod display name
+        name = r.split('DisplayName">')[1].split('</td>')[0].strip()
+
+        ids[mod_id] = name
 
 # download required packages
 for pkg in ['wget', 'lib32gcc-s1']:
@@ -137,12 +156,19 @@ run('find {} -type l -exec rm {{}} \;'.format(keyspath))
 # download each mod and link it to the arma folder
 download = steamcmd + ' +login anonymous +workshop_download_item 107410 {} validate +quit'
 
+unsigned = []
 for mod_id in ids:
 
     path = '{}/{}'.format(workshop, mod_id)
+    bikey = False
 
     # download or update mod
     if update_mods or not os.path.exists(path):
+
+        # delete old workshop folder
+        run('') # rm ## TODO
+
+        # download again
         run(download.format(mod_id))
         run('chown -R {} {}'.format(user, path))
 
@@ -166,6 +192,11 @@ for mod_id in ids:
         for f in files:
             if f.endswith('.bikey'):
                 run('ln -s "{}" "{}/{}"'.format(os.path.join(root, f), keyspath, f))
+                bikey = True
+
+    # mod is unsigned if no .bikeys are found
+    if bikey == False:
+        unsigned += [mod_id]
 
 # copy server configuration
 run('cp {}/server.cfg {}/server.cfg'.format(cwd, gamepath))
@@ -181,4 +212,5 @@ cmd = './arma3server_x64 -name={} -config=server.cfg -mod={};{}'.format(server, 
 #cmd = './arma3server_x64 -name={} -profile={} -config=server.cfg -mod={};{}'.format(server, server, dlcs, mods)
 run(cmd, dry = True)
 
-print('\nMake sure to update ports for multiple servers.')
+print('\nMake sure to update ports in server.cfg for multiple servers.')
+print('No .bikeys found for these mods:', ', '.join(['{} ({})'.format(ids[i], i) for i in unsigned]))
