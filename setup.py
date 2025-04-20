@@ -6,22 +6,21 @@
 
 import os
 import subprocess
-#import pwd
+import pwd
 
-def run(cmd, dry = True, pipe = False):
+def run(cmd, dry = False, pipe = False):
     if dry:
         print(cmd)
     else:
         if pipe:
             res = subprocess.run(cmd, stdout = subprocess.PIPE, shell = True)
-            return res.stdout.strip()
+            return str(res.stdout.strip())
         else:
             #os.system(cmd)
             subprocess.Popen(cmd, shell = True).wait()
             return
 
 def user_exists(usr):
-    return True
     try:
         pwd.getpwnam(usr)
         return True
@@ -29,7 +28,6 @@ def user_exists(usr):
         return False
 
 def package_is_installed(pkg):
-    return True
     res = run("dpkg-query -W -f='${Status}\\n' " + pkg, pipe = True)
     return 'installed' in res
 
@@ -101,7 +99,7 @@ if os.path.exists(modfile):
 
 # download required packages
 for pkg in ['wget', 'lib32gcc-s1']:
-    if package_is_installed(pkg):
+    if not package_is_installed(pkg):
         run('sudo apt install ' + pkg)
         if not package_is_installed(pkg):
             raise RuntimeError('Could not install: {}'.format(pkg))
