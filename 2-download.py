@@ -44,8 +44,8 @@ armapath = home + '/steamcmd/arma3'
 profile1 = home + '/.local/share/Arma 3'
 profile2 = home + '/.local/share/Arma 3 - Other Profiles'
 gamepath = home + '/servers/' + server
-modspath = gamepath + '/mods'
-keyspath = gamepath + '/keys'
+modspath = gamepath + '/arma3/mods'
+keyspath = gamepath + '/arma3/keys'
 
 
 ## SETUP
@@ -96,34 +96,41 @@ os.chdir(home + '/steamcmd')
 if not os.path.exists(steamcmd):
     run('wget -c https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz')
     run('tar xf steamcmd_linux.tar.gz')
-run(steamcmd + ' +force_install_dir {} +quit'.format(armapath))
 
 # download or update arma
-if update or not os.path.exists('{}/{}'.format(armapath, 'arma3server_x64')):  
-    run(steamcmd + ' +login anonymous +app_update 233780 validate +quit')
+if update or not os.path.exists('{}/{}'.format(armapath, 'arma3server_x64')):
+    print('Downloading ARMA 3...')
+    run(steamcmd + ' +force_install_dir {} +login {} +app_update 233780 validate +quit'.format(armapath, steam_account))
 
 # also server DLC pack
 if needdlc:
     dlcs_installed = [os.path.exists('{}/{}'.format(armapath, d)) for d in dlc]
     if update or not all(dlcs_installed):
-        run(steamcmd + ' +login anonymous +app_update 233780 -beta creatordlc validate +quit')
+        print('Downloading ARMA 3 DLC...')
+        run(steamcmd + ' +force_install_dir {} +login {} +app_update 233780 -beta creatordlc validate +quit'.format(armapath, steam_account))
 
 # link base arma3 installation to server arma3
 run('ln -s "{}" "{}"'.format(armapath, gamepath))
-run('chown -R {} {}'.format(user, gamepath))
-# might also need to chmod 777 -R it
+run('chown -R {} {}/arma3'.format(user, gamepath))
+# chown is not really needed
+# might need to chmod 777 -R it
 
 # also copy server configuration
-run('cp {}/server.cfg {}/server.cfg'.format(cwd, gamepath))
+run('cp {}/server.cfg {}/arma3/server.cfg'.format(cwd, gamepath))
+#run('chown {} {}/arma3/server.cfg'.format(user, gamepath))
 #run('cp {}/{}.Arma3Profile {}/{}.Arma3Profile'.format(cwd, server, profile2, server))
 
 # setup workshop mods
+for path in [modspath, keyspath]:
+    if not os.path.exists(path):
+        os.makedirs(path, exist_ok = True)
+
 # empty /mods and /keys from previous data
 run('find {} -type l -exec rm {{}} \;'.format(modspath))
 run('find {} -type l -exec rm {{}} \;'.format(keyspath))
 
 # download each mod and link it to the arma folder
-download = steamcmd + ' +login anonymous +workshop_download_item 107410 {} validate +quit'
+download = steamcmd + ' +login {} +workshop_download_item 107410 {} validate +quit'
 
 unsigned = []
 for mod_id in ids:
@@ -138,7 +145,7 @@ for mod_id in ids:
         run('rm -rf {}'.format(path))
 
         # download again
-        run(download.format(mod_id))
+        run(download.format(steam_account, mod_id))
         run('chown -R {} {}'.format(user, path))
 
         # make all filenames lowercase
@@ -182,12 +189,12 @@ for mod_id in ids:
         # stop looking
         if mod_id in mod_names:
             break
-                        
+        
 
 ## DONE
 print('\nREADY! Use the following commands to start the server:\n')
 
-print('cd {}'.format(gamepath))
+print('cd {}/arma3'.format(gamepath))
 
 launch = './arma3server_x64 -name={server} -config=server.cfg'
 #launch = './arma3server_x64 -name={server} -profile={server} -config=server.cfg'
