@@ -8,16 +8,16 @@ import os
 import subprocess
 import pwd
 
-def run(cmd, dry = False, pipe = False):
+def run(cmd, dry = False, pipe = False, user = None):
     if dry:
         print(cmd)
     else:
         if pipe:
-            res = subprocess.run(cmd, stdout = subprocess.PIPE, shell = True)
+            res = subprocess.run(cmd, stdout = subprocess.PIPE, shell = True, user = user)
             return str(res.stdout.strip())
         else:
             #os.system(cmd)
-            subprocess.Popen(cmd, shell = True).wait()
+            subprocess.Popen(cmd, shell = True, user = user).wait()
             return
 
 def user_exists(usr):
@@ -113,12 +113,18 @@ if not os.path.exists(home):
 
 # switch to user
 current_user = run('whoami', pipe = True)
+u = None
 if current_user != user:
     # they are all soap to me
     #run('sudo -i -u {}'.format(user))
     #run('sudo -u {} -s'.format(user))
     #run('sudo su {} -'.format(user))
-    run('sudo su {} -'.format(user))
+    # run commands as a different user since we are currently logged in as root
+    u = user
+    # WARNING: os.rename and os.makedirs is still as root
+    # need to somehow switch or chown everything
+    # TODO: split script into 2 parts, one user one root
+    # check https://stackoverflow.com/questions/8025294/changing-user-in-python
 
 # prep folders for installation
 os.chdir(home)
@@ -129,32 +135,32 @@ for path in [armapath, gamepath, profile1, profile2]:
 # download steamcmd
 os.chdir(home + '/steamcmd')
 if not os.path.exists(steamcmd):
-    run('wget -c https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz')
-    run('tar xf steamcmd_linux.tar.gz')
-run(steamcmd + ' +force_install_dir {} +quit'.format(armapath))
+    run('wget -c https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz', user = u)
+    run('tar xf steamcmd_linux.tar.gz', user = u)
+run(steamcmd + ' +force_install_dir {} +quit'.format(armapath), user = u)
 
 # download or update arma
 if update or not os.path.exists('{}/{}'.format(armapath, 'arma3server_x64')):  
-    run(steamcmd + ' +login anonymous +app_update 233780 validate +quit')
+    run(steamcmd + ' +login anonymous +app_update 233780 validate +quit', user = u)
 
 # also server DLC pack
 if needdlc:
     if update or not os.path.exists('{}/{}'.format(armapath, 'vn')):
-        run(steamcmd + ' +login anonymous +app_update 233780 -beta creatordlc validate +quit')
+        run(steamcmd + ' +login anonymous +app_update 233780 -beta creatordlc validate +quit', user = u)
 
 # link base arma3 installation to server arma3
-run('ln -s "{}" "{}"'.format(armapath, gamepath))
-run('chown -R {} {}'.format(user, gamepath))
+run('ln -s "{}" "{}"'.format(armapath, gamepath), user = u)
+run('chown -R {} {}'.format(user, gamepath), user = u)
 # might also need to chmod 777 -R it
 
 # also copy server configuration
-run('cp {}/server.cfg {}/server.cfg'.format(cwd, gamepath))
-#run('cp {}/{}.Arma3Profile {}/{}.Arma3Profile'.format(cwd, server, profile2, server))
+run('cp {}/server.cfg {}/server.cfg'.format(cwd, gamepath), user = u)
+#run('cp {}/{}.Arma3Profile {}/{}.Arma3Profile'.format(cwd, server, profile2, server), user = u)
 
 # setup mods
 # empty /mods and /keys from previous data
-run('find {} -type l -exec rm {{}} \;'.format(modspath))
-run('find {} -type l -exec rm {{}} \;'.format(keyspath))
+run('find {} -type l -exec rm {{}} \;'.format(modspath), user = u)
+run('find {} -type l -exec rm {{}} \;'.format(keyspath), user = u)
 
 # download each mod and link it to the arma folder
 download = steamcmd + ' +login anonymous +workshop_download_item 107410 {} validate +quit'
@@ -169,11 +175,11 @@ for mod_id in ids:
     if update_mods or not os.path.exists(path):
 
         # delete old workshop folder
-        run('rm -rf {}'.format(path))
+        run('rm -rf {}'.format(path), user = u)
 
         # download again
-        run(download.format(mod_id))
-        run('chown -R {} {}'.format(user, path))
+        run(download.format(mod_id), user = u)
+        run('chown -R {} {}'.format(user, path), user = u)
 
         # make all filenames lowercase
         for root, dirs, files in os.walk(path, topdown = True):
@@ -188,13 +194,13 @@ for mod_id in ids:
                     files[i] = f.lower()
 
     # link mod to our /mods folder
-    run('ln -s "{}" "{}/{}"'.format(path, modspath, mod_id))
+    run('ln -s "{}" "{}/{}"'.format(path, modspath, mod_id), user = u)
 
     # also link .bikeys to our /keys folder
     for root, dirs, files in os.walk(path, topdown = True):
         for f in files:
             if f.endswith('.bikey'):
-                run('ln -s "{}" "{}/{}"'.format(os.path.join(root, f), keyspath, f))
+                run('ln -s "{}" "{}/{}"'.format(os.path.join(root, f), keyspath, f), user = u)
                 bikey = True
 
     # mod is unsigned if no .bikeys are found
@@ -217,10 +223,6 @@ for mod_id in ids:
         if mod_id in mod_names:
             break
                         
-
-# copy server configuration
-run('cp {}/server.cfg {}/server.cfg'.format(cwd, gamepath))
-#run('cp {}/{}.Arma3Profile {}/{}.Arma3Profile'.format(cwd, server, profile2, server))
 
 ## DONE
 print('\nREADY! Use the following commands to start the server:\n')
