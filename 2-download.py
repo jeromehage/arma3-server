@@ -67,6 +67,7 @@ mod_names = {}
 if os.path.exists(modfile):
     with open(modfile, 'r') as f:
         raw = f.read()
+    raw = raw[raw.find('<table>'):]
     for r in raw.split('</tr>')[:-1]:
         # get mod id from the workshop link
         href = r.split('href="')[1].split('"')[0].strip()
@@ -145,6 +146,7 @@ for mod_id in ids:
         run('rm -rf {}'.format(path))
 
         # download again
+        print('Downloading {} ({})'.format(mod_id, ids[mod_id]))
         run(download.format(steam_account, mod_id))
         run('chown -R {} {}'.format(user, path))
 
@@ -202,14 +204,14 @@ dlcs = ';'.join(dlc)
 mods = ';'.join(['mods/{}'.format(i) for i in ids])
 cmd = launch.format(server = server)
 if needdlc or needmod:
-    cmd += ' -mod=' + ';'.join([s for s in [dlcs, mods] if s != ''])
+    cmd += ' -mod="' + ';'.join([s for s in [dlcs, mods] if s != '']) + '"'
 print(cmd)
 
 print('\nwhich is equivalent to below on Windows\n')
 mods = ';'.join(['mods/@{}\\'.format(mod_names.get(i, v)) for i, v in ids.items()])
 cmd = launch.format(server = server)
 if needdlc or needmod:
-    cmd += ' -mod=' + ';'.join([s for s in [dlcs, mods] if s != ''])
+    cmd += ' -mod="' + ';'.join([s for s in [dlcs, mods] if s != '']) + '"'
 print(cmd)
 
 print('\nMake sure to update ports in server.cfg for multiple servers.')

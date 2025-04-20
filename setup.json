@@ -1,11 +1,11 @@
 {
-    "update": true,
-    "update_mods": true,
-    "modfile": "soggy18.04.25.html",
+    "update": false,
+    "update_mods": false,
+    "modfile": "soggy.html",
     "dlc": [
         "vn"
     ],
-    "steam_account": "anonymous",
+    "steam_account": "please_create_another_steam_acc_first_then_edit_setup.json",
     "user": "arma",
     "server": "soggy"
 }
