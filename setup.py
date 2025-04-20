@@ -133,22 +133,27 @@ os.chdir(home + '/steamcmd')
 if not os.path.exists(steamcmd):
     run('wget -c https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz')
     run('tar xf steamcmd_linux.tar.gz')
+run(steamcmd + ' +force_install_dir {} +quit'.format(armapath))
 
 # download or update arma
-if update or not os.path.exists('{}/{}'.format(armapath, 'arma3server_x64')):
-    run(steamcmd + ' +force_install_dir {} +quit'.format(armapath))
+if update or not os.path.exists('{}/{}'.format(armapath, 'arma3server_x64')):  
     run(steamcmd + ' +login anonymous +app_update 233780 validate +quit')
 
 # also server DLC pack
 if needdlc:
     if update or not os.path.exists('{}/{}'.format(armapath, 'vn')):
-        run(steamcmd + ' +force_install_dir {} +quit'.format(armapath))
         run(steamcmd + ' +login anonymous +app_update 233780 -beta creatordlc validate +quit')
 
-if update:
-    run('ln -s "{}" "{}"'.format(armapath, gamepath))
-    run('chown -R {} {}'.format(user, gamepath))
+# link base arma3 installation to server arma3
+run('ln -s "{}" "{}"'.format(armapath, gamepath))
+run('chown -R {} {}'.format(user, gamepath))
+# might also need to chmod 777 -R it
 
+# also copy server configuration
+run('cp {}/server.cfg {}/server.cfg'.format(cwd, gamepath))
+#run('cp {}/{}.Arma3Profile {}/{}.Arma3Profile'.format(cwd, server, profile2, server))
+
+# setup mods
 # empty /mods and /keys from previous data
 run('find {} -type l -exec rm {{}} \;'.format(modspath))
 run('find {} -type l -exec rm {{}} \;'.format(keyspath))
@@ -166,7 +171,7 @@ for mod_id in ids:
     if update_mods or not os.path.exists(path):
 
         # delete old workshop folder
-        run('') # rm ## TODO
+        run('rm -rf {}'.format(path))
 
         # download again
         run(download.format(mod_id))
@@ -198,6 +203,23 @@ for mod_id in ids:
     if bikey == False:
         unsigned += [mod_id]
 
+    # find internal mod name
+    # like the "@CUP_Vehicles" names in Windows
+    # note: not sure if this is useful
+    for cfgfile in ['meta.cpp', 'mod.cpp']:
+        cfgpath = '{}/{}'.format(path, cfgfile)
+        if os.path.exists(cfgpath):
+            with open(cfgpath, 'r') as f:
+                cfg = f.read()
+                for line in cfg.split('\n'):
+                    if line.startswith('name = "'):
+                        name = line.split('"')[1]
+                        mod_names[mod_id] = name
+        # stop looking
+        if mod_id in mod_names:
+            break
+                        
+
 # copy server configuration
 run('cp {}/server.cfg {}/server.cfg'.format(cwd, gamepath))
 #run('cp {}/{}.Arma3Profile {}/{}.Arma3Profile'.format(cwd, server, profile2, server))
@@ -212,5 +234,12 @@ cmd = './arma3server_x64 -name={} -config=server.cfg -mod={};{}'.format(server, 
 #cmd = './arma3server_x64 -name={} -profile={} -config=server.cfg -mod={};{}'.format(server, server, dlcs, mods)
 run(cmd, dry = True)
 
+print('\nwhich is equivalent to below on Windows\n')
+mods = ';'.join(['mods/@{}\\'.format(mod_names.get(i, v)) for i, v in ids.items()])
+cmd = './arma3server_x64 -name={} -config=server.cfg -mod="{};{}"'.format(server, dlcs, mods)
+run(cmd, dry = True)
+
 print('\nMake sure to update ports in server.cfg for multiple servers.')
-print('No .bikeys found for these mods:', ', '.join(['{} ({})'.format(ids[i], i) for i in unsigned]))
+
+if len(unsigned) > 0:
+    print('\nWarning: no .bikeys found for these mods:', ', '.join(['{} ({})'.format(ids[i], i) for i in unsigned]))
