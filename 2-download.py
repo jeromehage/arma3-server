@@ -1,60 +1,38 @@
-# source:
-# https://community.bistudio.com/wiki/Arma_3:_Dedicated_Server
-# https://github.com/fiskce/Arma3-Server-Mod-Manager-Linux/blob/main/armamm.sh
-# https://github.com/GameServerManagers/LinuxGSM/blob/master/lgsm/config-default/config-lgsm/arma3server/_default.cfg
-# https://www.reddit.com/r/arma/comments/n7mz0e/how_to_get_sog_prairie_fire_dlc_running_on_arma_3/
-
 import os
-import subprocess
-import pwd
+import json
+from utilities import run
 
-def run(cmd, dry = False, pipe = False, user = None):
-    if dry:
-        print(cmd)
-    else:
-        if pipe:
-            res = subprocess.run(cmd, stdout = subprocess.PIPE, shell = True, user = user)
-            return str(res.stdout.strip())
-        else:
-            #os.system(cmd)
-            subprocess.Popen(cmd, shell = True, user = user).wait()
-            return
+## READ CONFIG FILE
+with open('setup.json', 'r') as f:
+    config = json.load(f)
 
-def user_exists(usr):
-    try:
-        pwd.getpwnam(usr)
-        return True
-    except KeyError:
-        return False
+# set to True to download arma3 again (and dlcs if needed)
+# will create server folders and symlink arma3 in both cases
+update = config['update']
 
-def package_is_installed(pkg):
-    res = run("dpkg-query -W -f='${Status}\\n' " + pkg, pipe = True)
-    return 'installed' in res
-
-## CONFIG
-
-update = True
-update_mods = True
+# set to True to download workshop mods again
+# will empty mods and keys folders then symlink the right ones in both caes
+update_mods = config['update_mods']
 
 # the exported list of mods
-modfile = 'soggy18.04.25.html'
+modfile = config['modfile']
 
 # dlcs to use
-# set to [] for vanilla
-# ex: SOG is ['vn']
-dlc = ['vn']
+# ex: set to [] for vanilla, SOG is ['vn']
+dlc = config['dlc']
 
 # you do not need to own ARMA to download "ARMA 3 Linux dedicated server"
 # but it is recommended that you make a different steam account for steamcmd
-steam_account = 'anonymous'
+steam_account = config['steam_account']
 
 # also recommended to run steamcmd and arma3 under a different linux user
-user = 'arma'
+user = config['user']
 
 # multiple server configuration
 # uses /arma3 as a base and symlinks to it
 # use a short name without spaces like 'ww2italy'
-server = 'soggy'
+server = config['server']
+
 
 # dirs
 cwd = os.getcwd()
@@ -71,16 +49,25 @@ keyspath = gamepath + '/keys'
 
 
 ## SETUP
-needdlc = len(dlc) > 0
+
+# you need to run the script as the arma user
+# otherwise os.rename and os.makedirs will belong to root
+current_user = run('whoami', pipe = True)
+if current_user != user:
+    raise AssertionError(
+        'Expected {} user, currently {}, . Make sure to run 1-setup.py first!'.format(
+            current_user, user
+            )
+        )
 
 # read the list of mod IDs from the modfile
+# if the modfile does not exist, do not use mods
 ids = {}
 mod_names = {}
 if os.path.exists(modfile):
     with open(modfile, 'r') as f:
         raw = f.read()
     for r in raw.split('</tr>')[:-1]:
-
         # get mod id from the workshop link
         href = r.split('href="')[1].split('"')[0].strip()
         if 'id=' not in href:
@@ -91,40 +78,12 @@ if os.path.exists(modfile):
         if j == 0:
             j = len(href)
         mod_id = href[i: j]
-
         # get mod display name
         name = r.split('DisplayName">')[1].split('</td>')[0].strip()
-
         ids[mod_id] = name
 
-# download required packages
-for pkg in ['wget', 'lib32gcc-s1']:
-    if not package_is_installed(pkg):
-        run('sudo apt install ' + pkg)
-        if not package_is_installed(pkg):
-            raise RuntimeError('Could not install: {}'.format(pkg))
-
-# create user
-if not user_exists(user):
-    run('sudo useradd -m -s /bin/bash {}'.format(user))
-
-if not os.path.exists(home):
-    os.makedirs(home, exist_ok = True)
-
-# switch to user
-current_user = run('whoami', pipe = True)
-u = None
-if current_user != user:
-    # they are all soap to me
-    #run('sudo -i -u {}'.format(user))
-    #run('sudo -u {} -s'.format(user))
-    #run('sudo su {} -'.format(user))
-    # run commands as a different user since we are currently logged in as root
-    u = user
-    # WARNING: os.rename and os.makedirs is still as root
-    # need to somehow switch or chown everything
-    # TODO: split script into 2 parts, one user one root
-    # check https://stackoverflow.com/questions/8025294/changing-user-in-python
+needdlc = len(dlc) > 0
+needmod = len(ids) > 0
 
 # prep folders for installation
 os.chdir(home)
@@ -135,32 +94,33 @@ for path in [armapath, gamepath, profile1, profile2]:
 # download steamcmd
 os.chdir(home + '/steamcmd')
 if not os.path.exists(steamcmd):
-    run('wget -c https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz', user = u)
-    run('tar xf steamcmd_linux.tar.gz', user = u)
-run(steamcmd + ' +force_install_dir {} +quit'.format(armapath), user = u)
+    run('wget -c https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz')
+    run('tar xf steamcmd_linux.tar.gz')
+run(steamcmd + ' +force_install_dir {} +quit'.format(armapath))
 
 # download or update arma
 if update or not os.path.exists('{}/{}'.format(armapath, 'arma3server_x64')):  
-    run(steamcmd + ' +login anonymous +app_update 233780 validate +quit', user = u)
+    run(steamcmd + ' +login anonymous +app_update 233780 validate +quit')
 
 # also server DLC pack
 if needdlc:
-    if update or not os.path.exists('{}/{}'.format(armapath, 'vn')):
-        run(steamcmd + ' +login anonymous +app_update 233780 -beta creatordlc validate +quit', user = u)
+    dlcs_installed = [os.path.exists('{}/{}'.format(armapath, d)) for d in dlc]
+    if update or not all(dlcs_installed):
+        run(steamcmd + ' +login anonymous +app_update 233780 -beta creatordlc validate +quit')
 
 # link base arma3 installation to server arma3
-run('ln -s "{}" "{}"'.format(armapath, gamepath), user = u)
-run('chown -R {} {}'.format(user, gamepath), user = u)
+run('ln -s "{}" "{}"'.format(armapath, gamepath))
+run('chown -R {} {}'.format(user, gamepath))
 # might also need to chmod 777 -R it
 
 # also copy server configuration
-run('cp {}/server.cfg {}/server.cfg'.format(cwd, gamepath), user = u)
-#run('cp {}/{}.Arma3Profile {}/{}.Arma3Profile'.format(cwd, server, profile2, server), user = u)
+run('cp {}/server.cfg {}/server.cfg'.format(cwd, gamepath))
+#run('cp {}/{}.Arma3Profile {}/{}.Arma3Profile'.format(cwd, server, profile2, server))
 
-# setup mods
+# setup workshop mods
 # empty /mods and /keys from previous data
-run('find {} -type l -exec rm {{}} \;'.format(modspath), user = u)
-run('find {} -type l -exec rm {{}} \;'.format(keyspath), user = u)
+run('find {} -type l -exec rm {{}} \;'.format(modspath))
+run('find {} -type l -exec rm {{}} \;'.format(keyspath))
 
 # download each mod and link it to the arma folder
 download = steamcmd + ' +login anonymous +workshop_download_item 107410 {} validate +quit'
@@ -175,11 +135,11 @@ for mod_id in ids:
     if update_mods or not os.path.exists(path):
 
         # delete old workshop folder
-        run('rm -rf {}'.format(path), user = u)
+        run('rm -rf {}'.format(path))
 
         # download again
-        run(download.format(mod_id), user = u)
-        run('chown -R {} {}'.format(user, path), user = u)
+        run(download.format(mod_id))
+        run('chown -R {} {}'.format(user, path))
 
         # make all filenames lowercase
         for root, dirs, files in os.walk(path, topdown = True):
@@ -194,13 +154,13 @@ for mod_id in ids:
                     files[i] = f.lower()
 
     # link mod to our /mods folder
-    run('ln -s "{}" "{}/{}"'.format(path, modspath, mod_id), user = u)
+    run('ln -s "{}" "{}/{}"'.format(path, modspath, mod_id))
 
     # also link .bikeys to our /keys folder
     for root, dirs, files in os.walk(path, topdown = True):
         for f in files:
             if f.endswith('.bikey'):
-                run('ln -s "{}" "{}/{}"'.format(os.path.join(root, f), keyspath, f), user = u)
+                run('ln -s "{}" "{}/{}"'.format(os.path.join(root, f), keyspath, f))
                 bikey = True
 
     # mod is unsigned if no .bikeys are found
@@ -226,18 +186,24 @@ for mod_id in ids:
 
 ## DONE
 print('\nREADY! Use the following commands to start the server:\n')
-run('cd {}'.format(gamepath), dry = True)
 
+print('cd {}'.format(gamepath))
+
+launch = './arma3server_x64 -name={server} -config=server.cfg'
+#launch = './arma3server_x64 -name={server} -profile={server} -config=server.cfg'
 dlcs = ';'.join(dlc)
 mods = ';'.join(['mods/{}'.format(i) for i in ids])
-cmd = './arma3server_x64 -name={} -config=server.cfg -mod={};{}'.format(server, dlcs, mods)
-#cmd = './arma3server_x64 -name={} -profile={} -config=server.cfg -mod={};{}'.format(server, server, dlcs, mods)
-run(cmd, dry = True)
+cmd = launch.format(server = server)
+if needdlc or needmod:
+    cmd += ' -mod=' + ';'.join([s for s in [dlcs, mods] if s != ''])
+print(cmd)
 
 print('\nwhich is equivalent to below on Windows\n')
 mods = ';'.join(['mods/@{}\\'.format(mod_names.get(i, v)) for i, v in ids.items()])
-cmd = './arma3server_x64 -name={} -config=server.cfg -mod="{};{}"'.format(server, dlcs, mods)
-run(cmd, dry = True)
+cmd = launch.format(server = server)
+if needdlc or needmod:
+    cmd += ' -mod=' + ';'.join([s for s in [dlcs, mods] if s != ''])
+print(cmd)
 
 print('\nMake sure to update ports in server.cfg for multiple servers.')
 
