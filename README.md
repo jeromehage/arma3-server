@@ -1,3 +1,7 @@
+## What's this
+
+Setup script for ARMA 3 server on linux, with workshop mods.
+
 ## How to use
 
 - Install Python: `sudo apt install python3`
