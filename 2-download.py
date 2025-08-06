@@ -1,4 +1,4 @@
-import os
+import os, time
 import json
 from utilities import run
 
@@ -102,6 +102,7 @@ if not os.path.exists(steamcmd):
 if update or not os.path.exists('{}/{}'.format(armapath, 'arma3server_x64')):
     print('Downloading ARMA 3...')
     run(steamcmd + ' +force_install_dir {} +login {} +app_update 233780 validate +quit'.format(armapath, steam_account))
+    time.sleep(5)
 
 # also server DLC pack
 if needdlc:
@@ -109,15 +110,17 @@ if needdlc:
     if update or not all(dlcs_installed):
         print('Downloading ARMA 3 DLC...')
         run(steamcmd + ' +force_install_dir {} +login {} +app_update 233780 -beta creatordlc validate +quit'.format(armapath, steam_account))
+        time.sleep(5)
 
 # link base arma3 installation to server arma3
-run('ln -s "{}" "{}"'.format(armapath, gamepath))
+run('cp -lrf "{}" "{}"'.format(armapath, gamepath))
 run('chown -R {} {}/arma3'.format(user, gamepath))
 # chown is not really needed
 # might need to chmod 777 -R it
 
 # also copy server configuration
-run('cp {}/server.cfg {}/arma3/server.cfg'.format(cwd, gamepath))
+if not os.path.exists('{}/arma3/server.cfg'.format(gamepath)):
+    run('cp {}/server.cfg {}/arma3/server.cfg'.format(cwd, gamepath))
 #run('chown {} {}/arma3/server.cfg'.format(user, gamepath))
 #run('cp {}/{}.Arma3Profile {}/{}.Arma3Profile'.format(cwd, server, profile2, server))
 
@@ -148,6 +151,7 @@ for mod_id in ids:
         # download again
         print('Downloading {} ({})'.format(mod_id, ids[mod_id]))
         run(download.format(steam_account, mod_id))
+        time.sleep(5)
         run('chown -R {} {}'.format(user, path))
 
         # make all filenames lowercase
@@ -163,13 +167,13 @@ for mod_id in ids:
                     files[i] = f.lower()
 
     # link mod to our /mods folder
-    run('ln -s "{}" "{}/{}"'.format(path, modspath, mod_id))
+    run('cp -lrf "{}" "{}/{}"'.format(path, modspath, mod_id))
 
     # also link .bikeys to our /keys folder
     for root, dirs, files in os.walk(path, topdown = True):
         for f in files:
             if f.endswith('.bikey'):
-                run('ln -s "{}" "{}/{}"'.format(os.path.join(root, f), keyspath, f))
+                run('cp -lf "{}" "{}/{}"'.format(os.path.join(root, f), keyspath, f))
                 bikey = True
 
     # mod is unsigned if no .bikeys are found
@@ -208,7 +212,7 @@ if needdlc or needmod:
 print(cmd)
 
 print('\nwhich is equivalent to below on Windows\n')
-mods = ';'.join(['mods/@{}\\'.format(mod_names.get(i, v)) for i, v in ids.items()])
+mods = ';'.join(['@{}'.format(mod_names.get(i, v)) for i, v in ids.items()])
 cmd = launch.format(server = server)
 if needdlc or needmod:
     cmd += ' -mod="' + ';'.join([s for s in [dlcs, mods] if s != '']) + '"'
